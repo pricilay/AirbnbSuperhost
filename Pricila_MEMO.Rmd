@@ -1,0 +1,46 @@
+---
+title: "To: Airbnb Strategy and Implementation Manager"
+author: "Yovinda Pricila"
+date: "2019-12-12"
+output: html_document
+---
+
+```{r echo = FALSE}
+# Purpose: TA Airbnb Rentals in Hawaii
+# Date: December 10, 2019
+# Author: Yovinda Pricila
+
+```
+
+From a bamboo treehouse in Bali to a boathouse in Amsterdam, Airbnb has known to be the go-to platform for today’s customers in search for a unique holiday experience. That said, Airbnb has to implement an effective sharing-economy program and governance that would causally improve both customer and host experience: the Superhost program. 
+
+
+Hypothetically, we believe that guests would be more likely to select premium listings if hosts are verified to meet quality metrics, such as high response rate, stay review score, or if a host had completed a minimum number of stays. That said, I was provided with 23,000 of Airbnb listings in Hawaii from 2008 to 2018, to assess the effectiveness of the Superhost program in improving listings occupancy, profitability, and customer experience.
+
+
+For a quick Superhost outlook, the growth of new rental listings in Hawaii accelerated in year 2014 to 2016, while only 34% of the hosts retained the Superhost status. Categorizing all rentals to four neighborhood clusters, I was not surprised to see the significant nightly rate difference in each location. In this case, I am suggesting that some area is more saturated than another, which caused the demand to be highly price-sensitive. 
+
+
+
+![](aveprice_compare.png){width=450px}
+![](numrev_compare.png){width=450px}
+
+
+Contradicting to our initial hypothesis, data shows that the average nightly rate of regular host is 9.80 to 24.20 dollar higher than Superhost. Based on its locations, I am surprised to found that regular hosts consistently offered a higher nightly rate than Superhost across all four locations. In extreme comparison, regular host in Maui retained $78 to $103 higher nightly rate than a Superhost in Honolulu. Unfortunately, the data does not provide the listings occupied night history. The closest indicator to predict occupancy would be the host's number of reviews, which reflected the guests’ post-booking engagement. From this viewpoint, it is given that Superhost typically received 23 to 26 more reviews than regular hosts. Theoretically, I conclude that Superhost attracted more guests by offering a much lower nightly rate to increase their occupancy. Several caveats to these findings are that guests’ post-booking review rates in Hawaii is relatively low; I recommend attaining more dataset of the listing occupancy history (occupied night per available night) before taking into this conclusion.
+
+
+![](scores_rate.png){width=600px}
+
+
+
+Next, I compared the Superhost metrics effectiveness based on customer reviews on both host status. Our analysis shows that only 66.42% of current Superhost fulfilled the minimum requirements of maintaining 1) 90% response rate, 2) 96% review scores, and 3) exceeding 3 minimum stays. Statistically, I found the Superhosts have roughly 4.2% to 4.7% higher ratings than regular hosts, with a median review score of 97%. Based on the chart above, I also analyzed that 24.6% of the regular host has successfully attained the Superhost requirement, but yet to be recognized with the Superhost status. Therefore, I can conclude that the program has not been fairly governed and implemented. If needed, the status recognition has to be more frequently adjusted to ensure the fairness of the host commission distribution. If Airbnb succeed in implementing this program, we would expect the nightly rate of the predefined Superhost to be $19 to $31 higher than the current Superhost, which is about 14.3% higher than the mean average. 
+
+
+
+In conclusion, this analysis is still rather premature and would require further verification from other analysis and dataset. However, I believe that better governance on the Superhost status would help to increase the average nightly by $19 to $31 higher. I believe that if improving the fairness of this program would also boosted customer confidence in purchasing premium listings, which would improve occupancy and listing profit for hosts. If you have further questions, please do not hesitate to reach me through my e-mail: pricilay@seattleu.edu. I would be more than happy to provide you the Technical Appendix with our complete analysis and more thorough detail.
+
+
+Best regards,
+
+
+Yovinda Pricila

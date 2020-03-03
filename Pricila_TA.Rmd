@@ -1,0 +1,861 @@
+---
+title: "Tech Appendix: Airbnb Rentals in Hawaii"
+author: "Yovinda Pricila"
+date: "2019-11-22"
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    number_sections: true
+---
+
+```{r echo = FALSE}
+# Purpose: TA Airbnb Rentals in Hawaii
+# Date: December 10, 2019
+# Author: Yovinda Pricila
+
+```
+
+This document provides technical supporting information for the AIRBNB listing data report analysis in Hawaii, United States. This report summarizes and communicates the results of AIRBNB rooms features (# of guests, bedrooms, type of property, etc) and character (superhost, seasonality, location etc) listings that affects the pricing and occupancy. 
+
+Data provided was 23000 listings in Hawaii from 2008 to 2019. 
+
+# Library list 
+
+```{r, echo=FALSE, message=FALSE}
+# remove global environment 
+rm(list = ls(all.names = TRUE))
+```
+
+```{r, message = FALSE}
+library(tidyverse)
+library(ggplot2)
+library(dplyr)
+library(gridExtra)
+library(esquisse)
+library(inspectdf)
+library(tidyr)
+library(DataExplorer)
+library(janitor)
+library(MultinomialCI)
+library(scales)
+library(GGally)
+library(knitr)
+```
+
+# Load and transform data 
+
+```{r}
+#load data 
+bnb <- read.csv("listings_hw.csv")
+```
+
+# Base EDA Step 1: Univariate non-graphical 
+```{r}
+host <- bnb %>% 
+  dplyr::select(23, 26, 27, 29, 34, 81, 83:93, 97:99, 39:46, 49:67, -59)
+
+head(host)
+```
+
++ description and observation of the data: 
+
+  + detailed listings data showing 106 attributes for each of the listings. 
+  + major attributes that'll be used in the analysis: 
+    + HOST: what distinguishes a superhost and host status? 
+      + variables: host_is_superhost(cat), host_response_time(cat), host_response_rate(continuous), host_acceptance_rate(continuous), availability_365(num), review_scores_rating, review_scores_accuracy, cancellation_policy(cat)
+    + PRICE AND FEATURES: What are listing characteristic that has the most influence on price? 
+      + var: price(num), longitude(num), latitude(num), neighborhood or neighbourhood_cleansed (cat), property_type(cat), room_type(cat), accomodates(num), bathrooms, bedrooms, bed type(cat), square_feet(num), monthly_price(num), security_deposit(num), cleaning_fee(num)
+
+```{r}
+summary(host)
+```
+
++ THOUGHTS AND OBSERVATION
+  + from the summary above, i am mainly focusing on the host attributes and its customer ratings. 
+  + in this case, i am most interested to see the superhost vs. host reviews, as well as other relevant factors in the booking decision, such as cancellation policy, location, and response rate, which are mainly the factors affected by the renter's service. 
+  + would probably best to strip of host_since to year and to calculate how long does renter has joined Airbnb to see if renting experience affect the review/ratings. 
+
++ SUPERHOST: ratio of superhost:host is about 1:2. only one third of hosts are superhost 
++ host response rate is mostly within an hour. more surprising is knowing the response rate mean and median... which are 95% and 100%. this is showing a VERY high hosts engagement. 
++ Host total listing: max is 1717. (should check whether if this is an error; i believe so) but it is common for host to have each multiple listings. 
++ availability 365: showing the number of days in a year that the listing is available to be rented. showing that some listings are preserved only for certain period. 
++ number of reviews: would check whether if superhost is necessarily has to have higher reviews than regular host. or if regular host have not-positive reviews 
++ review scores rating mean is 94.73, whereas its median is 97. it is reasonable for airbnb to set min Superhost min rating to be higher. 
++ would check the cancellation policy of superhost v regular host.
+
+tidying up data: 
++ has to convert price, weekly_price, monthly_price, security_deposit, cleaning_fee, extra_people into numeric data. the value of these columns includes dollar sign. stripping the symbols using gsub() 
+
+```{r}
+# converting strings to numberic type 
+host$price <- as.numeric(gsub("\\$", "", host$price))
+host$weekly_price <- as.numeric(gsub("\\$", "", host$weekly_price))
+host$monthly_price <- as.numeric(gsub("\\$", "", host$monthly_price))
+host$security_deposit <- as.numeric(gsub("\\$", "", host$security_deposit))
+host$cleaning_fee <- as.numeric(gsub("\\$", "", host$cleaning_fee))
+host$extra_people <- as.numeric(gsub("\\$", "", host$extra_people))
+host$host_response_rate <- as.numeric(gsub("%", "", host$host_response_rate))
+```
+
+
+```{r}
+# converting date to year only; to calculate host_since and active hosting long. 
+host <- host %>% 
+  separate(host_since, c("host_since_year"), sep = "[-]") %>% 
+  dplyr::mutate(host_since_long = 2019 - as.numeric(host_since_year))
+
+```
+
+
+```{r}
+host <- host %>% 
+  separate(first_review, c("first_review_year"), sep = "[-]") %>% 
+  dplyr::mutate(first_review_long = 2019 - as.numeric(first_review_year))
+```
+
+
+```{r}
+# to mark rents in which never been successfully rented by NAval. 
+host$NAval <- host$first_review_long
+host$NAval <- ifelse((is.na(host$first_review_long)), 0 , host$NAval)
+host$NAval <- ifelse((host$first_review_long > 0 ), 1 , host$NAval)
+```
+
+```{r}
+host$NAprice <- host$price
+host$NAprice <- ifelse((is.na(host$price)), 0, host$NAprice)
+host$NAprice <- ifelse((host$price > 0), 1, host$NAprice)
+```
+  
+```{r}
+#creating DF1 for non-NA val. 
+df1 <- host %>% 
+  filter(NAval != 0 & host_is_superhost != "" & NAprice != 0) 
+```
+
++ to proceed, i have removed the NA value to remove data from listings that does not have have been reviewed. 
++ the reason being is because we'd want to make sure that the data truly reflected the listings that have been booked and reviewed to reflect the quality of existing customer experience. 
+
+```{r}
+df1$HostStatus <- df1$host_is_superhost
+df1$HostStatus <- ifelse((df1$host_is_superhost == "t"), "Superhost" , df1$HostStatus)
+df1$HostStatus <- ifelse((df1$host_is_superhost == "f" ), "Host", df1$HostStatus)
+```
+
+```{r}
+host <- host %>% 
+  separate(last_review, c("last_review_year"), sep = "[-]") %>% 
+  mutate(last_review_long = 2019 - as.numeric(last_review_year), 
+         active_hosting_long =  as.numeric(last_review_year) - as.numeric(first_review_year),
+         avg_review_per_actv_year = number_of_reviews/active_hosting_long,
+         availability_rate = availability_365/365,
+         avg_review_per_ava = avg_review_per_actv_year/availability_365)
+
+```
+
++ MUTATION on HOSTS : 
+  + airbnb data does not offer occupancy rate/occupied night for every listing. the closest variable that I could use for this further analysis is the number of reviews, knowing that only customers that has completed their stay have the access to write review and/or rate the host. 
+      - this would not be the best indicator, however, knowing that not all customer who stayed are willing to write reviews. 
+      -although Airbnb has designed a platform (in which in my opinion), relatively active to followup feedbacks from customer, this has not guarantee 100% of customer post-stay feedback. 
+  + looking at graph below, showing a very interesting visual; the skewness for how long host joined Airbnb have a different extremeness with its active hosting indicator (last review-first review). This might be an indicator of few possibilities: 
+      - decreasing trend of active host (last review- first review) indicates most host are active for the first year, and the engagement reduced. 
+      - could indicate that newer listings receive better advertisement/engagement or that users prefer newer houses
+  + Airbnb host has a left skewedness.. indicate that there is less new host in Hawaii.. how do we encourage new renters? 
+  + careful of N/A values... showing that renters have joined AIRBNB but has not yet successfully rented any rooms. WHY? use inspect df. 
+  
+```{r}
+grid.arrange(
+ggplot(host) +
+ aes(x = host_since_long) +
+ geom_histogram(bins = 30L, fill = "#0c4c8a") +
+ labs(x = "how long host joined Airbnb", y = "count") +
+ theme_minimal(), 
+
+ggplot(host) +
+ aes(x = active_hosting_long) +
+ geom_histogram(bins = 30L, fill = "#cb181d") +
+ theme_minimal() + 
+  labs (x= "active customer review period"),
+
+ncol = 1)
+```
+
+```{r}
+host %>% 
+  inspect_na() %>% 
+  show_plot() 
+```
+
+
++ from this graph, given that out of 23000 listings, about 5602 of listings have NOT been rented yet. (first review NA/last review NA)
+    + in this case, about 25% of the listings are either have not been successful in attrcating customers.. this is a VERY HIGH number 
+    + follow up question... in this case... does this mean that out of 14k regular host.. only 14k - 5.6k = 8K are actually regular host!!! 
+    + how do we handle the data... do we omit this or not? 
+      + analyze any particular data that shows why renters did not listed the room. is it a duplicate listing? 
+      
+    
+```{r}
+host %>% 
+  inspect_cat() %>% 
+  show_plot()
+```
+
+# Base EDA Step 2: Uni-variate graphical 
+
+   CATEGORICAL UNI-VARIATE GRAPHICAL: 
+  
+```{r}
+grid.arrange(
+
+  ggplot(data = host, mapping = aes( x = host_is_superhost)) + 
+  geom_bar(), 
+  
+  ggplot(data = host, mapping = aes( x = host_response_time)) + 
+  geom_bar(), 
+  
+  ggplot(data = bnb, mapping = aes( x = cancellation_policy)) + 
+  geom_bar(), 
+  
+  ggplot(data = bnb, mapping = aes( x = room_type)) + 
+  geom_bar(), 
+  
+  ggplot(data = bnb, mapping = aes( x = neighbourhood_group_cleansed)) + 
+  geom_bar(),
+  
+  ggplot(data = bnb, mapping = aes( x = is_location_exact)) + 
+  geom_bar(), 
+  
+  ggplot(data = bnb, mapping = aes( x = instant_bookable)) + 
+  geom_bar(), 
+  
+  ggplot(data = bnb, mapping = aes( x = bed_type)) + 
+  geom_bar(), 
+  
+  ggplot(data = host, mapping = aes( x = NAval)) + 
+  geom_bar(),
+  
+  
+  ncol = 3) 
+
+```
+
+  NUMERICAL UNIVARIATE GRAPHICAL 
+
+  - REVIEW SCORES VALUE and ACCURACY 
+  
+```{r}
+# Total scores to sum the criteria of all score criteria 
+host <- host %>% 
+  mutate(total_scores = review_scores_accuracy + review_scores_checkin + review_scores_cleanliness + review_scores_communication + review_scores_location + review_scores_value)
+```
+  
+```{r}
+host %>%
+  dplyr::select(11:17) %>%
+  inspect_num() %>% 
+  show_plot()
+```
+ 
+ + ANALYZING THE REVIEW SCORES.. 
+    - mostly has max score. small number shows below ave. even existed, in a very small proportion. 
+    - if so, does most services provided are favorable? 
+    - does this scores distributed evenly for superhost and regular host? 
+    
+```{r}
+host %>%
+  dplyr:: select(1, 3, 5:7, 47, 50:52 ) %>%
+  inspectdf:: inspect_num() %>% 
+  show_plot()
+```
+
++ most houses are not available for full year. right skewed. 
++ response rate are usually very high. correlates to the response time (cat). 
++ Most hosts have less than 10 listings. hosts with more listings are business entity. 
+
+```{r}
+host %>%
+  dplyr::select(34, 37, 45, 40:42) %>%
+  inspect_num() %>% 
+  show_plot()
+
+```
+
++ PRICING ANALYSIS AND ACCOMODATES. 
+  - price are left-skewed. however we should realize thst price is highly affected by multiple factors (accomodates, num of bedrooms, location, etc.). for analysis, use MEDIAN. 
+      - check how does price differ on superhost and host on a similar listing?
+  - monthly price and weekly price similaryly have a right skewed distribution, but very different with nightly rate. 
+  - accomodates, beds, and guests_included have a very similar distribution pattern.. showing that most listings provide occupancy less than mean (prob. some listings are vacation houses for >30). USE MEDIAN. 
+
+
+# Base EDA Step 3: Multivariate Non-Graphical
+
+```{r}
+# checking the number of Superhost: Host in percentage 
+bnb  %>%
+  filter(host_is_superhost != "") %>%
+  tabyl(host_is_superhost) %>%
+  adorn_totals(where = c("row", "col")) %>%
+  adorn_percentages(denominator = "all") %>%
+  adorn_pct_formatting(rounding = "half up", digits = 2)
+```
+```{r}
+host  %>%
+  tabyl(neighbourhood_group_cleansed) %>%
+  adorn_totals(where = c("row", "col")) 
+```
+
+```{r}
+host  %>%
+  tabyl(first_review_year) %>%
+  adorn_totals(where = c("row", "col")) 
+```
+
+```{r}
+host %>%
+  tabyl( neighbourhood_group_cleansed, host_is_superhost) %>%
+  adorn_totals(where = c("row", "col"))
+```
+
+```{r}
+# rolling sum of number of host 
+host %>%
+  filter(host_since_year != "") %>%
+  group_by(host_since_year) %>% 
+  summarize(count = n()) %>%
+  mutate(sum_host = cumsum(count))
+```
+
+
+ 
+```{r}
+df1 %>%
+  filter(df1$square_feet !="") %>%
+  dplyr::select(host_response_rate,host_total_listings_count, availability_365, number_of_reviews, latitude, longitude, accommodates, price, square_feet, guests_included, host_since_long) %>%
+  cor() %>%
+  round(2) %>%
+  kable
+```
+
+
+```{r}
+df1 %>%
+  filter(HostStatus == "Superhost" & square_feet != "") %>%
+  dplyr::select(host_response_rate,host_total_listings_count, availability_365, number_of_reviews, latitude, longitude, accommodates, price, square_feet, guests_included, host_since_long) %>%
+  cor() %>%
+  round(2) %>%
+  kable
+``` 
+
++ findings: 
+    + 65% of Hosts are regular host while only 35% are Superhost. Does this number change from time to time? 
+    + Looking at the proportion of listings in four main location: Kauai has the lowest n sample size, only takes up 13% of the whole samples. this means that results are more affected by the extreme values/outliers. 
+    + Based on sample size, comparing listing of Honolulu and Maui will be a more apple-to-apple comparison.. knowing that samples are equally at 30% of the overall listings. 
+    + Growth of new hosts accelerated from 2014 - 2017, then slows down afterward. 
+        + People stars investing properties in Hawaii as a passive income. Shown that owner of properties are not necessarily residing in Hawaii. Could have further analyzes this.. but 'host_locaton' column is very messy and hard to dissect. What causes this slow down? 
+    + The year when most hosts got their first review is in 2018. 
+    + Correlation table analysis takeaway: 
+        - nightly rate is primarily affected by the number of accommodates, total guests, and squarefeet.. which perfectly makes sense that bigger room will increase the price. 
+        - INTERESTING point: listing with more number of reviews also have a higher nightly rate. could it be that a more experienced renters are also a selling point? that potential customers are attracted with rooms that have been reviewed? This means that customer relies a lot on reviews before booking. 
+        - number does not differ with Superhost corr tab. 
+  
+# Base EDA Step 4: Multivariate Graphical
+
+  4A SUPERHOSTS distribution accross different variables
+
+```{r}
+df1 <- df1 %>%
+ filter(!(host_response_time %in% "N/A")) 
+
+grid.arrange(
+  
+ggplot(df1) +
+ aes(x = host_response_time, fill = host_is_superhost) +
+ geom_bar(position = "dodge") +
+ scale_fill_hue() +
+ theme_minimal() + theme(legend.position = "none"),
+
+ggplot(df1) +
+ aes(x = neighbourhood_group_cleansed, fill = host_is_superhost) +
+ geom_bar(position = "dodge") +
+ scale_fill_hue() +
+ theme_minimal() + 
+  theme(legend.position = "none"), 
+
+ggplot(df1) +
+ aes(x = instant_bookable, fill = host_is_superhost) +
+ geom_bar(position = "dodge") +
+ scale_fill_hue() +
+ theme_minimal() + 
+  theme(legend.position = "none"),
+
+ggplot(df1) +
+ aes(x = cancellation_policy, fill = host_is_superhost) +
+ geom_bar(position = "dodge") +
+ scale_fill_hue() +
+ theme_minimal() + 
+  theme(legend.position = "none"),
+
+ncol = 2) 
+
+
+
+```
+
+ + response time: although most hosts responses inquiries within an hour, this data does not show that superhost have a higher count of response time. 
+ + from the second graph, it seems like the difference of superhost:host is closer over time. in other word, the longer the host joined and actively renting rooms, the smaller the difference gap between the superhost& host. 
+ + i think, "HAWAII" in the neighburhood group refer to other location outside of the three main island: Honolulu, Kauai, and Maui. Hawaii group is the only location where superhost > host. what causes this? 
+ + there are a dropping number of new hosts approaching 2019. does it because of the data timeline? 
+ 
+ 4B How about the price? Does nightly rate differs in different listing location? 
+ 
+```{r}
+
+ggplot(df1) +
+ aes(x = price, fill = host_is_superhost) +
+ geom_histogram(bins = 30L) +
+ scale_fill_hue() +
+ theme_minimal() +
+ theme(legend.position = "none") +
+ facet_wrap(vars(neighbourhood_group_cleansed))
+
+```
+
+ + THE proportion of Superhost:host in Honolulu and Maui is a lot more smaller than Hawaii. more Superhosts are in Hawaii. 
+ + I am wondering how the proportion will change is filtering the accomodates value by median.. 
+
+```{r}
+grid.arrange(
+ggplot(df1) +
+ aes(x = neighbourhood_group_cleansed, y = price, fill = neighbourhood_group_cleansed) +
+ geom_boxplot() +
+ scale_fill_hue() +
+ theme_minimal() + coord_flip()+  theme(legend.position = "none"),
+ncol = 1) 
+```
+ 
+  + Boxplot is giving a better visual.. shown that median of nightly rate in Maui and Kauai are higher than Honolulu and Hawaii. Is it because the demand is higher in Maui and Kauai? 
+  
+```{r}
+df1 %>%
+  group_by(cancellation_policy, host_is_superhost) %>%
+  subset(cancellation_policy %in% c("super_strict_30", "flexible", "strict_14_with_grace_period")) %>%
+  filter(price != "" ) %>%
+  summarise(price_median = median(price)) %>% 
+  ggplot(aes(x = reorder(cancellation_policy, price_median), y = price_median, fill = reorder(host_is_superhost, price_median))) + 
+  geom_bar(stat = "identity", position = "dodge") + coord_flip() + theme_classic() + theme(legend.position="bottom") 
+```
+ 
+```{r}
+df1 %>%
+  group_by(cancellation_policy, host_is_superhost, neighbourhood_group_cleansed) %>%
+  subset(cancellation_policy %in% c("super_strict_30", "flexible", "strict_14_with_grace_period")) %>%
+  filter(price != "" ) %>%
+  summarise(price_median = mean(price)) %>% 
+  ggplot(aes(x = reorder(cancellation_policy, price_median), y = price_median, fill = reorder(host_is_superhost, price_median))) + 
+  geom_bar(stat = "identity", position = "dodge") + coord_flip() + theme_classic() + theme(legend.position="bottom") + facet_wrap(~neighbourhood_group_cleansed)
+```
+  
+```{r}
+df1 %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(avg_price = median(price)) %>% 
+  ggplot(aes(x = reorder(neighbourhood_group_cleansed, -avg_price), y = avg_price, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  geom_hline(yintercept = 174, size = 0.3) + theme_classic() + theme(legend.position = "none") 
+  
+```
+
+```{r}
+df1 %>%
+  filter(square_feet != "") %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(avg_accom = median(accommodates)) %>% 
+  ggplot(aes(x = neighbourhood_group_cleansed, y = avg_accom, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") + theme(legend.position = "none") 
+  
+```
+
+```{r}
+df1 %>%
+  filter(square_feet != "") %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(avg_sqft = median(square_feet)) %>% 
+  ggplot(aes(x = neighbourhood_group_cleansed, y = avg_sqft, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") + theme(legend.position = "bottom") 
+  
+```
+
+  
+```{r}
+df1 %>%
+  filter(review_scores_rating != "") %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(review_scores_rating_mean = mean(review_scores_rating)) %>% 
+  ggplot(aes(x = host_is_superhost, y = review_scores_rating_mean, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") + facet_wrap(~neighbourhood_group_cleansed) + 
+  #geom_hline(yintercept = 1) + 
+  theme(legend.position = "none") 
+```
+ 
+```{r}
+df1 %>%
+  filter(number_of_reviews != "") %>%
+  group_by(host_is_superhost) %>%
+  summarise(number_of_reviews_ave = median(number_of_reviews)) %>% 
+  ggplot(aes(x = host_is_superhost, y = number_of_reviews_ave, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") + 
+  #geom_hline(yintercept = 1) + 
+  theme(legend.position = "none") 
+```
+
+```{r}
+df1 %>%
+  filter(number_of_reviews != "") %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(number_of_reviews_ave = mean(number_of_reviews)) %>% 
+  ggplot(aes(x = host_is_superhost, y = number_of_reviews_ave, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") + facet_wrap(~neighbourhood_group_cleansed) + 
+  #geom_hline(yintercept = 1) + 
+  theme(legend.position = "none") 
+```
+
+```{r}
+df1 %>%
+  filter(number_of_reviews >= 3) %>%
+  group_by(HostStatus, review_scores_rating, host_response_rate) %>%
+  summarise(review_scores_avg = median(review_scores_rating),
+            response_rate_avg = mean(host_response_rate)) %>% 
+  ggplot(aes(x = response_rate_avg, y = review_scores_avg, color = HostStatus)) +
+  geom_point(position=position_jitter(h=0.20,w=0.20), size = 1) + 
+  #acet_wrap(~HostStatus) +
+  theme_classic()  + 
+  xlim(60,100) + 
+  ylim(60,100) + 
+  annotate("rect", xmin = 90, xmax = 100, ymin = 95, ymax = 100, fill = "yellow", alpha = 0.60) + 
+  annotate("text", x = 95, y = 97.5, label = "Superhost", size = 3) + 
+  theme(legend.position = "bottom", 
+        plot.title = element_text(face = "bold"), 
+        plot.subtitle = element_text(face = "italic")) + 
+  labs(x = "Average Response Rate (in %)", 
+       y = "Average Review Scores (Out of 100)",  
+       title = "the Superhost status is not being fairly implemented", 
+       subtitle = "Although hosts have hit 90% Response Rate and 96% Review Scores, \nHosts are yet to be awarded with the Superhost status, and vice versa") + scale_color_manual(values = c("#7584AD", "#FFB997")) 
+  
+
+ggsave("scores_rate.png", width = 7, height = 5)
+```
+ 
+  + seen from the graph above that superhost response rate and score avg is more saturated on the upper right corner (100, 100), whereas regular host are more distributed. 
+  + there are still outliers.... a superhost seemed to have a very low median score but still maintain his/her superhost status. is this an error? 
+  
+```{r}
+
+grid.arrange(
+df1 %>% 
+  group_by(host_since_year) %>% 
+  summarize(count = n()) %>%
+  mutate(sum_host = cumsum(count)) %>% ggplot(aes(x = host_since_year, y = sum_host)) + geom_col() + theme_classic() + labs(title = "the increase rate of new host decrease over time"),
+
+ncol =1)
+
+```
+
+```{r}
+df1%>%
+  group_by(neighbourhood_group_cleansed, host_since_year) %>% 
+  summarize(count = n()) %>%
+  mutate(sum_host = cumsum(count)) %>% 
+  ggplot(aes(x = host_since_year, y = sum_host, fill = neighbourhood_group_cleansed, group = neighbourhood_group_cleansed)) + geom_col() + theme_classic() + theme(legend.position=c(0.30, 0.70))
+```
+
+```{r}
+df1%>%
+  group_by(HostStatus, host_since_year) %>% 
+  summarize(count = n()) %>%
+  mutate(sum_host = cumsum(count)) %>% 
+  ggplot(aes(x = host_since_year, y = sum_host, color= HostStatus, group = HostStatus)) + 
+  geom_line(size = 1) + 
+  theme_classic() + 
+  theme(legend.position=c(0.25, 0.50)) + 
+  annotate("rect", xmin = 7, xmax = 10, ymin = 40, ymax = 8000, fill = "lightgreen", alpha = 0.15) + 
+  labs(y = "Total Hosts", 
+       x = "Year Joined", 
+       title = "Growth of new Airbnb hosts in Hawaii accelerated from 2014 to 2017", 
+       subtitle = )
+```
+```{r}
+df1%>%
+  dplyr::select(host_is_superhost, first_review_year, price, number_of_reviews) %>%
+  dplyr::group_by(first_review_year) %>% 
+  summarize(ave_price = median(price), 
+            med_rev = median(number_of_reviews)) %>% 
+  ggplot(aes(x = first_review_year, y = ave_price))+
+  geom_point() +
+  theme_classic() 
+```
+
+ + older listings have much lower price median 
+ + newer listings are setting at a much higher nightly rate median. 
+ 
+ 
+```{r}
+df1%>%
+  group_by(HostStatus, host_since_year) %>% 
+  summarize(count = n()) %>%
+  mutate(sum_host = cumsum(count)) %>% 
+  ggplot(aes(x = host_since_year, y = sum_host, fill = HostStatus, group = HostStatus)) + 
+  geom_col() + theme_classic() + theme(legend.position=c(0.15, 0.70)) + 
+  labs( x = "Year Joined", 
+        y = "Cum. Sum of Hosts in Hawaii", 
+        title = "Superhost vs. Host ratio",
+        subtitle  = "Given that only 34% of hosts are Superhost") + 
+  scale_fill_manual(values = c("#7584AD", "#FFB997")) 
+ggsave("superhost.png", width = 7, height = 5)
+```
+
+```{r}
+#median nightly rate in different area 
+df1 %>%
+  filter(neighbourhood_group_cleansed != "Kauai" & neighbourhood_group_cleansed !="Hawaii") %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(avg_price = mean(price)) %>% 
+  ggplot(aes(x = reorder(neighbourhood_group_cleansed, -avg_price), y = avg_price, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge") +  
+  geom_hline(yintercept = 174, size = 0.3) + theme_classic() + 
+  theme(legend.position = "none", 
+        plot.title = element_text(face = "bold"), 
+        plot.subtitle = element_text(face = "italic")) +  
+  scale_fill_manual(values = c("#7584AD", "#FFB997")) + 
+  labs( x = "Location ", 
+        y = "Average nightly rate ($)", 
+        title = "Comparing average nightly rate of listings in Maui and Honolulu", 
+        subtitle = "Maui offers significantly higher average nightly rate than Honolulu \n Regardless, regular hosts set higher listing price than Superhost", 
+        caption = "Data Provided by Airbnb") + 
+  geom_text(aes(x = neighbourhood_group_cleansed, y = avg_price, label = round(avg_price, digits = 2)), 
+            position = position_dodge2(width = 1), 
+            size = 3.5, vjust = 3.25, color = "white", fontface = "bold"
+            )  + 
+  scale_y_continuous(labels = dollar)
+
+ggsave("aveprice_compare.png", width = 7, height = 5)
+```
+
+```{r}
+df1 %>% 
+  filter(square_feet != "") %>%
+  summarize(med_p = median(number_of_reviews))
+```
+
+```{r}
+df1 %>%
+  filter(neighbourhood_group_cleansed != "Kauai" & neighbourhood_group_cleansed !="Hawaii") %>%
+  group_by(host_is_superhost, neighbourhood_group_cleansed) %>%
+  summarise(avg_reviw = mean(number_of_reviews)) %>% 
+  ggplot(aes(x = reorder(neighbourhood_group_cleansed, avg_reviw), y = avg_reviw, fill = host_is_superhost)) +
+  geom_bar(stat = "identity", position = "dodge")  + theme_classic() + 
+  theme(legend.position = "none", 
+        plot.title = element_text(face = "bold", size = 11), 
+        plot.subtitle = element_text(face = "italic", size = 10)) + 
+  scale_fill_manual(values = c("#7584AD", "#FFB997")) + 
+  geom_hline(yintercept = 50, size = 0.3, linetype ="dashed") +
+  labs(x = "Location", 
+       y = "Average number of reviews", 
+       title = "Comparing average number of review of property listing in Mauai and Honolulu", 
+       subtitle = "Consistently, Superhosts seemed to have higher number of reviews, \nAlthough not a perfect parameter, Superhosts have better guests engagement, and predictively, occupancy. ",
+       caption = "Data provided by Airbnb.com") + 
+  geom_text(aes(x = neighbourhood_group_cleansed, y = avg_reviw, label = round(avg_reviw, digits = 0)), 
+            position = position_dodge2(width = 1), 
+            size = 4, vjust = 3.25, color = "white", fontface = "bold"
+            )  + 
+ggsave("numrev_compare.png", width = 7, height = 5)
+  
+```
+
+```{r}
+a <- df1 %>%
+  group_by(HostStatus) %>%
+  summarise(count = n()) %>% 
+  ggplot(aes(x = "", y = count, fill = HostStatus)) + 
+  geom_bar(stat = "identity", width = 1) 
+
+
+a + coord_polar("y", start = 0) + theme_classic() + theme(legend.position = "bottom")
+```
+
++ MAIN FINDINGS: 
+  -	Host:superhost ratio is 2:1; however 23% of data showed that listings have never been rented. 
+  -	Majority of hosts responded customer within an hour. 
+  -	Majority of room type is entire room. 
+  -	Following area has the most listings to the least: Maui, Honolulu, Hawaii, Kauai. 
+  -	Review scores have a very high mean and median. 
+  -	Price are left-skewed. Due to this reason, would use median on the further analysis. 
+      -	Kauai and Maui have a higher nightly rate mean and median; YET SMALLER AVG SQUARE FEET.
+      -	Honolulu and Hawaii have much lower nightly rate median; much larger average square feet… and higher accommodation. 
+  -	There are higher number of regular host in every location, except Hawaii. 
+  -	Review score rating for host and superhost does not differ significantly, including for all location. 
+  -	PRIMARY DIFFERENCE: Superhost median is tripled the regular host number of reviews. Showing more customer engagement. 	
+  -	Interesting point.. rents with super strict cancellation policy have a much higher price median, where listings with cheaper nightly rate have a much flexible cancellation policy. DEMAND. And that superhost have a lot cheaper nightly rate than regular host. 
+
+
+# Testing: Statistical analysis and Detailed EDA
+  
+```{r}
+options(scipen = 10)
+```
+  
+  Running regression analysis to find which variable that causes most impact on price change. 
+```{r}
+fit_mod <- lm(price~ factor(host_is_superhost) +  review_scores_rating +  factor(neighbourhood_group_cleansed)  + accommodates +  host_since_long, data = df1)
+
+summary(fit_mod)
+```
+
+```{r}
+Count1 <- df1 %>%
+  group_by(neighbourhood_group_cleansed) %>%
+  summarise(count = n())
+
+medpri <- df1 %>%
+  group_by(neighbourhood_group_cleansed) %>%
+  summarise(meanPrice = median(price), sumRevenueALL = sum(price))
+
+mod1 <- merge(Count1, medpri, by = c("neighbourhood_group_cleansed"))
+mod1
+
+```
+```{r}
+df1 %>%
+  filter(HostStatus == "Superhost"& review_scores_rating > 96 & host_response_rate > 90) %>%
+  dplyr::select(HostStatus, review_scores_rating, host_response_rate) %>%
+  group_by(HostStatus) %>%
+  summarise(count = n())
+```
+
+```{r}
+df1 %>%
+  filter(HostStatus == "Host") %>%
+  dplyr::select(HostStatus, review_scores_rating, host_response_rate) %>%
+  group_by(HostStatus) %>%
+  summarise(count = n())
+```
+
+
+```{r}
+df1 %>%
+  dplyr::select(price, HostStatus) %>%
+  group_by(HostStatus) %>%
+  summarise(med_price = median(price), count = n())
+```
+
+```{r}
+df_sh <- df1 %>% 
+  filter(HostStatus == "Superhost")
+
+df_h <- df1 %>% 
+  filter(HostStatus == "Host")
+
+t.test(df_h$price, df_sh$price, conf.level = 0.99)
+```
+
++ given that 99% confidence level that regular hosts are selling nightly rate at 9.8 to 24.2 dollar higher than Superhost. 
+
+```{r}
+df_sh_hon <- df1 %>% 
+  filter(HostStatus == "Superhost" & neighbourhood_group_cleansed == "Honolulu" )
+
+df_h_maui <- df1 %>% 
+  filter(HostStatus == "Host" & neighbourhood_group_cleansed == "Maui")
+
+t.test(df_h_maui$price, df_sh_hon$price, conf.level = 0.99)
+```
+
++ at 99% confidence level, on average, Regular host in Maui sells 79 to 103 higher nightly rate than superhost in Honolulu. 
+
+```{r}
+df_sh_rev <- df1 %>% 
+  filter(HostStatus == "Superhost" )
+
+df_h_rev <- df1 %>% 
+  filter(HostStatus == "Host")
+
+t.test(df_sh_rev$number_of_reviews, df_h_rev$number_of_reviews, conf.level = 0.95)
+```
+
+```{r}
+
+df_sh_rev <- df1 %>% 
+  filter(HostStatus == "Superhost" )
+
+df_h_rev <- df1 %>% 
+  filter(HostStatus == "Host")
+
+t.test(df_sh_rev $number_of_reviews, conf.level = 0.95)
+```
+
++ at 95% confidence level, we know that Superhost typically receive much higher number of reviews. ranging from 23 to 26 more reviews than regular hosts. which showing their more experience in hosting and using the app. 
+
+```{r}
+df_sh <- df1 %>% 
+  filter(HostStatus == "Superhost" & neighbourhood_group_cleansed == "Honolulu" )
+
+df_h <- df1 %>% 
+  filter(HostStatus == "Host" & neighbourhood_group_cleansed == "Maui" )
+
+
+t.test(df_sh$square_feet, df_h$square_feet, conf.level = 0.90)
+```
+
+```{r}
+df_sh <- df1 %>% 
+  filter(HostStatus == "Superhost" )
+
+df_h<- df1 %>% 
+  filter(HostStatus == "Host")
+
+t.test(df_sh$review_scores_rating, df_h$review_scores_rating, conf.level = 0.99)
+```
+
+```{r}
+df_sh <- df1 %>% 
+  filter(HostStatus == "Superhost" )
+
+df_h<- df1 %>% 
+  filter(HostStatus == "Host")
+
+t.test(df_sh$host_response_rate, df_h$host_response_rate, conf.level = 0.99)
+```
+
+```{r}
+df_t <- df1 %>% 
+  filter(review_scores_rating >= 97 & host_response_rate >= 90)
+
+
+t.test(df_t$price, conf.level = 0.95)
+```
+
+```{r}
+df_sh <- df1 %>% 
+  filter(HostStatus == "Superhost" )
+
+t.test(df_sh$price, conf.level = 0.95)
+```
+
+
+```{r}
+df_t <- df1 %>% 
+  filter(review_scores_rating >= 97 & host_response_rate >= 90)
+
+df_sh <- df1 %>% 
+  filter(HostStatus == "Superhost" )
+
+t.test(df_t$price, df_sh$price, conf.level = 0.95)
+```
+
++ comparing the average price of real Superhost and the supposedly current definition of "Superhost" (where response rate >90% and review scores >96).. if the Superhost guidelines are implemented and regulated properly.. average nightly rate would have been 19 to 31 dollar higher! therefore, there should be better governance on this rule to pertain a fair hosting guideline. 
+
+```{r}
+t.test(df1$price, conf.level = 0.95)
+```
+

@@ -1,0 +1,135 @@
+---
+title: "Airbnb Superhost Analysis: Interactive Shiny Flexdashboard"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    social: menu
+    source_code: embed
+runtime: shiny
+---
+<style>                     
+.navbar {
+  background-color:darkblue;
+  border-color:orange;
+}
+</style>
+
+```{r echo = FALSE}
+# Course: 5210 Communicating Data
+# Purpose: Shiny demo using the Office Mart data in flexdashboard
+# Date: August 5, 2019
+# Author: Yovinda Pricila
+
+```
+
+```{r echo = FALSE}
+# Clear environment of variables and functions
+rm(list = ls(all = TRUE)) 
+
+```
+
+```{r}
+# load packages
+library(shiny)
+library(tidyverse)
+library(ggplot2)
+
+```
+
+```{r global, include=FALSE}
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+bnb <- read.csv("Dataset_Sample.csv")
+```
+
+```{r, include=FALSE}
+bnb$Price <- bnb$price
+bnb$Price <- ifelse((is.na(bnb$price)), 0, bnb$Price)
+bnb$Price <- ifelse((bnb$price > 0), 1, bnb$Price)
+
+bnb$HostStatus <- bnb$host_is_superhost
+bnb$HostStatus <- ifelse((bnb$host_is_superhost == "t"), "Superhost" , bnb$HostStatus)
+bnb$HostStatus <- ifelse((bnb$host_is_superhost != "t"), "Host", bnb$HostStatus)
+
+bnb <- bnb %>%
+  rename(SquareFeet = square_feet)
+
+bnb <- bnb %>%
+  rename(Location = neighbourhood_group_cleansed)
+
+bnb <- bnb %>%
+  rename(NumberofReviews = number_of_reviews, 
+         Bedroom = bedrooms, 
+         Bathroom = bathrooms, 
+         Rating = review_scores_rating,
+         Accommodate = accommodates)
+
+bnb <- bnb %>%
+  rename(NightlyRate = price, 
+         ResponseRate = host_response_rate)
+
+bnb$NightlyRate <- as.numeric(gsub("\\$", "", bnb$NightlyRate))
+bnb$ResponseRate <- as.numeric(gsub("\\%", "", bnb$ResponseRate))
+
+# Reduce the data set to analysis variables
+bnb <- bnb[,c("NumberofReviews", "Location", "NightlyRate", "Bedroom", "Bathroom", "Accommodate", "SquareFeet", "Rating", "ResponseRate", "HostStatus")]
+
+# Identify factor and numeric variables
+bnb_fact <- bnb[, sapply(bnb, is.factor)]
+bnb_num <- bnb[, sapply(bnb, is.numeric)]
+```
+
+Inputs {.sidebar}
+-----------------------------------------------------------------------
+  
+```{r}
+# Select x axis variable      
+selectInput('x', 'X-Axis Variable', names(bnb))
+
+# Select y axis variable      
+selectInput('y', 'Y-Axis Variable', names(bnb), names(bnb)[[2]])
+      
+# Differentiate by color
+#selectInput('color', 'Comparison Group', c('None', names(bnb_fact)), names(bnb_fact)[[2]])
+      
+```
+
+```{r}
+# Create data input
+selectedData <- reactive({
+    bnb[, c(input$x, input$y)]
+  })
+```
+
+Column {data-width=500}
+-----------------------------------------------------------------------
+### Interactive Scatterplot
+
+```{r}
+# Scatter plot data determined by user input
+renderPlot({
+    p <- ggplot(selectedData(), aes_string(x = input$x, y = input$y)) + 
+      geom_point(size = 2) 
+
+    p <- p + theme_classic()
+    
+    print(p)
+
+  })
+```
+
+### Findings and Recommendations {data-height=140}
+
++ Improving the fairness of Superhost program would boost customer confidence in purchasing premium listings; it'll improve occupancy and listing profit for hosts.
+
++ Better governance on the Superhost status would help to further maximize advertisement on rentals with $19 to $31 higher average nightly rate. 
+  
+Column {data-width=500}
+-----------------------------------------------------------------------
+
+### Superhost vs. Host: Rating and Response Rate
+
+![](scores_rate.png){width=600px}
+
+### Superhost vs. Host: Nightly Rate 
+
+![](aveprice_compare.png){width=600px}
